@@ -188,7 +188,7 @@ endif
 # Compilation options.	Perhaps some of these should come from Makefile.inc?
 OPT := -Os
 DEBUG := -g -Wall
-CFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(call cc-option, -Wdeclaration-after-statement) $(BITOPS_DEFINE)
+CFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(BITOPS_DEFINE)
 CXXFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(BITOPS_DEFINE)
 
 ifeq ($(RUN_IN_PLACE),yes)

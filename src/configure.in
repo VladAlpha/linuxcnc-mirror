@@ -381,12 +381,15 @@ else
 fi
 
 AC_PROG_CC([$RTSCC gcc])
+AC_PROG_CC_C99()
 AC_PROG_CPP()
 
 if test -z "$CC"; then
   AC_MSG_ERROR([no acceptable cc found])
 elif ! test `$CC -dumpversion | cut -d '.' -f 1` -gt 2 ; then
   AC_MSG_ERROR([Compilers older than gcc 3.x are no longer supported])
+elif test "$ac_cv_prog_cc_c99" -eq "no"; then
+  AC_MSG_ERROR([Compiler must support C99])
 fi
 
 AC_MSG_CHECKING([for usability of rdtscll from asm/msr.h])
