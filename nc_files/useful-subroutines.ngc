@@ -13,15 +13,15 @@
 
 o100 sub
   (helical hole milling, load tool and set feed first, then use like so:)
-  (o100 call [x pos] [y pos] [safety height] [hole depth] [hole dia] [tool dia])
-  (tool dia doesn't have to be specified exactly.)
-#6=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
+  (o100 call [x pos] [y pos] [safety height] [hole depth] [hole dia] [DOC])
+  (DOC is in percent id 50 = cut depth will be half tool diam)
+#<tool_diam>=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
 #4=[0 - #4]
-#7=[#6 / 2]  (#7 is depth per circle = half of tool diameter)
+#7=[#<tool_diam> * #6 / 100]  (#7 is depth per circle = tool diam*DOC/100)
 #8=[#3 - #7] (#8 is current depth step)
 g0 z#3
 (start above and right so we make a convex corner for entry to the ccw arcs)
-g0 x[#1 + #6] y[#2 + [#5 / 2]] 
+g0 x[#1 + #<tool_diam>] y[#2 + [#5 / 2]] 
 g41 g0 x#1 y[#2 + [#5 / 2]]
 o101 while [#8 GT #4]
 (down toward the specified depth a bit at a time)
@@ -39,8 +39,9 @@ o100 endsub
 
 o200 sub
   (slot cutting, load tool and set feed first, then use like so:)
-  (o200 call [x1] [y1] [x2] [y2] [width] [depth] [safety height] [tool dia])
-#8=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
+  (o200 call [x1] [y1] [x2] [y2] [width] [depth] [safety height] [%DOC])
+  (			  #1   #2   #3   #4   #5      #6      #7              #8   )
+#<tool_diam>=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
 #10=[#5/2] (radius)
 #11=[[atan [#4-#2]/[#3-#1]] + 180] ("backward" direction)
 #12=[#11 + 90] ("right" side direction)
@@ -51,7 +52,7 @@ o200 sub
 g0 z#7
 g0 x[#1+#13+#15] y[#2+#14+#16]
 g41 g0x[#1+#15] y[#2+#16]
-#17=[#8/2] (depth per cut is half tool dia)
+#17=[#<tool_diam> * #8 / 100] (depth per cut)
 #18=[#7-#17] (z)
 (down toward the specified depth a bit at a time)
 o201 while [#18 GT [0-#6]]
