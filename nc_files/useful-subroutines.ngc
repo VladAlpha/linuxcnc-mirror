@@ -15,6 +15,7 @@ o100 sub
   (helical hole milling, load tool and set feed first, then use like so:)
   (o100 call [x pos] [y pos] [safety height] [hole depth] [hole dia] [tool dia])
   (tool dia doesn't have to be specified exactly.)
+#6=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
 #4=[0 - #4]
 #7=[#6 / 2]  (#7 is depth per circle = half of tool diameter)
 #8=[#3 - #7] (#8 is current depth step)
@@ -39,6 +40,7 @@ o100 endsub
 o200 sub
   (slot cutting, load tool and set feed first, then use like so:)
   (o200 call [x1] [y1] [x2] [y2] [width] [depth] [safety height] [tool dia])
+#8=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
 #10=[#5/2] (radius)
 #11=[[atan [#4-#2]/[#3-#1]] + 180] ("backward" direction)
 #12=[#11 + 90] ("right" side direction)
