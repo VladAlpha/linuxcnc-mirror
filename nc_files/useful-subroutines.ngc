@@ -13,7 +13,7 @@
 
 o100 sub
   (helical hole milling, load tool and set feed first, then use like so:)
-  (o100 call [x pos] [y pos] [safety height] [hole depth] [hole dia] [DOC])
+  (o100 call [x pos] [y pos] [safety height] [hole depth] [hole dia] [%DOC])
   (DOC is in percent id 50 = cut depth will be half tool diam)
 #<tool_diam>=#5410	(#5410 is tool diameter, no need to pass value to subroutine)
 #4=[0 - #4]
@@ -75,21 +75,21 @@ o200 endsub
 
 g20 g64 g17 g90
 
-(here is the actual usage of o100: T1 is a 1/16th end mill)
+(here is the actual usage of o100: T1 is a 1/16th end mill, depth of cut is 1/2 tool diameter)
 t1 m6
 s1000 m3
 f60
-o100 call [0] [0] [.01] [.125] [.125] [.0625]
-o100 call [.25] [0] [.01] [.0625] [.25] [.0625]
+o100 call [0] [0] [.01] [.125] [.125] [50]
+o100 call [.25] [0] [.01] [.0625] [.25] [50]
 m5
 t0 m6
 
-(here is the actual usage of o200: T1 is a 1/16th end mill)
+(here is the actual usage of o200: T1 is a 1/16th end mill, depth of cut is 1/2 tool diameter)
 t1 m6
 s1000 m3
 f60
-o200 call [0] [.5] [1] [1] [.190] [.1] [.02] [.0625]
-o200 call [1] [0] [.5] [.5] [.190] [.1] [.02] [.0625]
+o200 call [0] [.5] [1] [1] [.190] [.1] [.02] [50]
+o200 call [1] [0] [.5] [.5] [.190] [.1] [.02] [50]
 m5
 t0 m6
 
