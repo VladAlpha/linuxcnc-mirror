@@ -90,7 +90,6 @@ static void hm2_read(void *void_hm2, long period) {
 
     hm2_tram_read(hm2);
     if ((*hm2->llio->io_error) != 0) return;
-
     hm2_ioport_gpio_process_tram_read(hm2);
     hm2_encoder_process_tram_read(hm2, period);
     hm2_resolver_process_tram_read(hm2, period);
@@ -101,6 +100,7 @@ static void hm2_read(void *void_hm2, long period) {
     //UARTS need to be explicity handled by an external component
 
     hm2_tp_pwmgen_read(hm2); // check the status of the fault bit
+    hm2_dpll_process_tram_read(hm2, period);
     hm2_raw_read(hm2);
 }
 
@@ -136,6 +136,7 @@ static void hm2_write(void *void_hm2, long period) {
     hm2_encoder_write(hm2);   // update ctrl register if needed
     hm2_absenc_write(hm2);    // set bit-lengths and frequency
     hm2_resolver_write(hm2, period); // Update the excitation frequency
+    hm2_dpll_write(hm2, period); // Update the timer phases
     hm2_led_write(hm2);	      // Update on-board LEDs
 
     hm2_raw_write(hm2);
@@ -262,6 +263,8 @@ const char *hm2_get_general_function_name(int gtag) {
         case HM2_GTAG_IOPORT:          return "IOPort";
         case HM2_GTAG_ENCODER:         return "Encoder";
         case HM2_GTAG_SSI:             return "SSI Encoder";
+        case HM2_GTAG_BISS:            return "BiSS Encoder";
+        case HM2_GTAG_FABS:            return "Fanuc Abs Encoder";
         case HM2_GTAG_RESOLVER:        return "Resolver";    
         case HM2_GTAG_STEPGEN:         return "StepGen";
         case HM2_GTAG_PWMGEN:          return "PWMGen";
@@ -274,15 +277,53 @@ const char *hm2_get_general_function_name(int gtag) {
         case HM2_GTAG_BSPI:            return "Buffered SPI Interface";
         case HM2_GTAG_UART_RX:         return "UART Receive Channel";
         case HM2_GTAG_UART_TX:         return "UART Transmit Channel";
+        case HM2_GTAG_DPLL:            return "DPLL";      
         default: {
             static char unknown[100];
             rtapi_snprintf(unknown, 100, "(unknown-gtag-%d)", gtag);
-            HM2_ERR_NO_LL("Firmware contains unknown function (gtag-%d)/n", gtag);
+            HM2_ERR_NO_LL("Firmware contains unknown function (gtag-%d)\n", gtag);
             return unknown;
         }
     }
 }
 
+int hm2_fabs_parse(hostmot2_t *hm2, char *token, int gtag){ 
+    //adds the absolute encoder format strings to a list
+    hm2_absenc_format_t *def;
+    struct list_head *ptr;
+    int i = simple_strtol(token, &token, 0);
+    if (i >= MAX_ABSENCS){
+        HM2_ERR("Currently only %i absolute encoders are supported"
+                " and you referred to an index of %i\n", MAX_ABSENCS, i);
+        return -1;
+    }
+    if (*token != '='){
+        HM2_ERR("The absolute encoder tag must be in the form "
+                "[ssi / biss / fanuc]_chan_N=abcdefg where N is a number"
+                " less than %i and abcdefg is a string specifying the "
+                "bit fields\n",
+                MAX_ABSENCS);
+        return -1;
+    }
+    list_for_each(ptr, &hm2->config.absenc_formats){
+        def = list_entry(ptr, hm2_absenc_format_t, list);
+        if (i == def->index && gtag == def->gtag){
+            HM2_ERR("Duplicate SSI/BISS/Fanuc definition. {Index %i for GTAG %i)"
+                    "exiting\n", i, gtag);
+            return -1;
+        }
+    }
+    def = kzalloc(sizeof(hm2_absenc_format_t), GFP_KERNEL);
+    if (def == NULL){
+        HM2_ERR("out of memory!\n");
+        return -ENOMEM;
+    }
+    def->gtag = gtag;
+    def->index = i;
+    strncpy(def->string, ++token, MAX_ABSENC_LEN);
+    list_add(&def->list, &hm2->config.absenc_formats);
+    return 0;
+}
 
 static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
     char **argv;
@@ -293,6 +334,8 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
     hm2->config.num_encoders = -1;
     hm2->config.num_absencs = -1;
     hm2->absenc.chans = NULL;
+    hm2->absenc.num_chans = 0;
+    INIT_LIST_HEAD(&hm2->config.absenc_formats);
     hm2->config.num_resolvers = -1;
     hm2->config.num_pwmgens = -1;
     hm2->config.num_tp_pwmgens = -1;
@@ -302,6 +345,7 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
     hm2->config.num_stepgens = -1;
     hm2->config.num_bspis = -1;
     hm2->config.num_uarts = -1;
+    hm2->config.num_dplls = -1;
     hm2->config.num_leds = -1;
     hm2->config.enable_raw = 0;
     hm2->config.firmware = NULL;
@@ -326,25 +370,16 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
             hm2->config.num_encoders = simple_strtol(token, NULL, 0);
 
         } else if (strncmp(token, "ssi_chan_", 9) == 0) {
-            int i;
             token += 9;
-            i = simple_strtol(token, &token, 0);
-            if (i >= MAX_ABSENCS){
-                HM2_ERR("Currently only %i absolute encoders are supported"
-                        " and you referred to an index of %i\n", MAX_ABSENCS, i);
-                goto fail;
-            }
-            if (*token != '='){
-                HM2_ERR("The absolute encoder tag must be in the form "
-                        "ssi_chan_N=abcdefg where N is a number less than %i"
-                        " and abcdefg is a string specifying the bit fields\n",
-                        MAX_ABSENCS);
-                goto fail;
-            }
-            // Just copy the string and parse it in the driver
-            // There is one "absenc" with multiple channels.
-            strncpy(hm2->config.ssi_formats[i], token + 1, MAX_ABSENC_LEN);
-
+            if (hm2_fabs_parse(hm2, token, HM2_GTAG_SSI) )goto fail;
+            
+        } else if (strncmp(token, "biss_chan_", 10) == 0) {
+            token += 10;
+            if (hm2_fabs_parse(hm2, token, HM2_GTAG_BISS)) goto fail;
+            
+        } else if (strncmp(token, "fanuc_chan_", 11) == 0) {
+            token += 11;
+            if (hm2_fabs_parse(hm2, token, HM2_GTAG_FABS)) goto fail;
 
         } else if (strncmp(token, "num_resolvers=", 14) == 0) {
             token += 14;
@@ -403,6 +438,10 @@ static int hm2_parse_config_string(hostmot2_t *hm2, char *config_string) {
         } else if (strncmp(token, "num_leds=", 9) == 0) {
             token += 9;
             hm2->config.num_leds = simple_strtol(token, NULL, 0);
+            
+        } else if (strncmp(token, "num_dplls=", 10) == 0) {
+            token += 10;
+            hm2->config.num_dplls = simple_strtol(token, NULL, 0);
 
         } else if (strncmp(token, "enable_raw", 10) == 0) {
             hm2->config.enable_raw = 1;
@@ -507,16 +546,17 @@ static void hm2_print_idrom(hostmot2_t *hm2) {
 
 
 static int hm2_read_idrom(hostmot2_t *hm2) {
+    u32 read_data;
 
     //
     // find the idrom offset
     //
 
-    if (!hm2->llio->read(hm2->llio, HM2_ADDR_IDROM_OFFSET, &hm2->idrom_offset, 2)) {
+    if (!hm2->llio->read(hm2->llio, HM2_ADDR_IDROM_OFFSET, &read_data, 4)) {
         HM2_ERR("error reading IDROM Offset\n");
         return -EIO;
     }
-
+    hm2->idrom_offset = read_data & 0xFFFF;
 
     //
     // first read in the idrom type to make sure we know how to deal with it
@@ -832,9 +872,11 @@ static int hm2_parse_module_descriptors(hostmot2_t *hm2) {
                 break;
             
             case HM2_GTAG_SSI:
-                md_accepted = hm2_absenc_parse_md(hm2, md_index, hm2->config.ssi_formats);
+            case HM2_GTAG_BISS:
+            case HM2_GTAG_FABS:
+                md_accepted = hm2_absenc_parse_md(hm2, md_index);
                 break;
-
+                
             case HM2_GTAG_RESOLVER:
                 md_accepted = hm2_resolver_parse_md(hm2, md_index);
                 break;
@@ -866,6 +908,10 @@ static int hm2_parse_module_descriptors(hostmot2_t *hm2) {
             case HM2_GTAG_UART_RX:
             case HM2_GTAG_UART_TX:
                 md_accepted = hm2_uart_parse_md(hm2, md_index);
+                break;
+                
+            case HM2_GTAG_HM2DPLL:
+                md_accepted = hm2_dpll_parse_md(hm2, md_index);
                 break;
                 
             case HM2_GTAG_LED:
@@ -904,6 +950,16 @@ static int hm2_parse_module_descriptors(hostmot2_t *hm2) {
         }
 
     }    
+    
+    // on any one run throught the absenc driver there is no way to know if 
+    // it is the last time, so we need to  trigger this from somewhere that 
+    // does know that it has stopped calling the sub-driver. 
+    if (hm2->absenc.num_chans > 0){
+         if (hm2_absenc_register_tram(hm2)){
+             HM2_ERR("Failed to register TRAM for absolute encoders\n");
+             return -EINVAL;
+         }
+    }
                                            
     return 0;  // success!
 }
@@ -940,6 +996,7 @@ static void hm2_cleanup(hostmot2_t *hm2) {
 
 void hm2_print_modules(hostmot2_t *hm2) {
     hm2_encoder_print_module(hm2);
+    hm2_absenc_print_module(hm2);
     hm2_resolver_print_module(hm2);
     hm2_pwmgen_print_module(hm2);
     hm2_tp_pwmgen_print_module(hm2);
@@ -1058,14 +1115,6 @@ int hm2_register(hm2_lowlevel_io_t *llio, char *config_string) {
         return -EINVAL;
     }
 
-    // NOTE: reset and program_fpga are allowed be NULL
-
-
-    if (config_string == NULL) {
-        HM2_PRINT_NO_LL("no firmware specified in config modparam!  the board had better have firmware configured already, or this won't work\n");
-    }
-
-
     //
     // make a hostmot2_t struct to represent this device
     //
@@ -1099,6 +1148,15 @@ int hm2_register(hm2_lowlevel_io_t *llio, char *config_string) {
     }
 
 
+
+    // NOTE: program_fpga will be NULL for 6i25 and 5i25 (and future cards 
+    // with EPROM firmware, probably. 
+
+    if ((llio->program_fpga != NULL) && (hm2->config.firmware == NULL)) {
+        HM2_PRINT_NO_LL("no firmware specified in config modparam!  the board had better have firmware configured already, or this won't work\n");
+    }
+
+    
     //
     // if programming of the fpga is supported by the board and the user
     // requested a firmware file, fetch it from userspace and program
@@ -1556,5 +1614,6 @@ void hm2_force_write(hostmot2_t *hm2) {
     hm2_tp_pwmgen_force_write(hm2);
     hm2_sserial_force_write(hm2);
     hm2_bspi_force_write(hm2);
+    hm2_dpll_force_write(hm2);
 }
 

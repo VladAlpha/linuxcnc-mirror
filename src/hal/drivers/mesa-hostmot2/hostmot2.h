@@ -123,8 +123,9 @@ char **argv_split(gfp_t gfp, const char *str, int *argcp);
 #define HM2_GTAG_DAQFIFO           (21) // Not supported
 #define HM2_GTAG_BINOSC            (22) // Not supported
 #define HM2_GTAG_DDMA              (23) // Not supported
-#define HM2_GTAG_BISS              (24) // Not supported
-#define HM2_GTAG_FABS              (25) // Not supported
+#define HM2_GTAG_BISS              (24) 
+#define HM2_GTAG_FABS              (25) 
+#define HM2_GTAG_HM2DPLL           (26) 
 #define HM2_GTAG_LIOPORT           (64) // Not supported
 #define HM2_GTAG_LED               (128)
 
@@ -345,8 +346,15 @@ typedef struct {
 // absolute encoder
 //
 
-#define MAX_ABSENCS 8
-#define MAX_ABSENC_LEN 32
+#define MAX_ABSENCS (32)
+#define MAX_ABSENC_LEN (128)
+
+typedef struct {
+    int gtag;
+    int index;
+    char string[MAX_ABSENC_LEN];
+    struct list_head list;
+} hm2_absenc_format_t;
 
 /* The absolute encoder protocols, with a bit field containing many
  * different data points end up looking so much like the smart-serial
@@ -363,6 +371,11 @@ typedef struct {
     u8 biss_version;
     u8 fanuc_version;
     u32 ssi_global_start_addr;
+    u32 fabs_global_start_addr;
+    u32 biss_global_start_addr;
+    u32 *biss_busy_flags;
+    u32 *ssi_busy_flags;
+    u32 *fabs_busy_flags;
 } hm2_absenc_t;
 
 //
@@ -783,6 +796,47 @@ typedef struct {
     u8 num_registers;
 } hm2_uart_t;
 
+//
+// HM2DPLL
+//
+
+typedef struct {
+    hal_float_t *time1_us;
+    hal_float_t *time2_us;
+    hal_float_t *time3_us;
+    hal_float_t *time4_us;
+    hal_float_t *base_freq;
+    hal_float_t *phase_error;
+    hal_u32_t *plimit;
+    hal_u32_t *ddssize;
+    hal_u32_t *time_const;
+    hal_u32_t *prescale;
+} hm2_dpll_pins_t ;
+
+typedef struct {
+
+    int num_instances ;
+    hm2_dpll_pins_t *pins ;
+
+    u32 base_rate_addr;
+    u32 base_rate_written;
+    u32 phase_err_addr;
+    u32 control_reg0_addr;
+    u32 control_reg0_written;
+    u32 control_reg1_addr;
+    u32 control_reg1_written;
+    u32 *control_reg1_read;
+    u32 timer_12_addr;
+    u32 timer_12_written;
+    u32 timer_34_addr;
+    u32 timer_34_written;
+    u32 hm2_dpll_sync_addr;
+    u32 *hm2_dpll_sync_reg;
+    u32 clock_frequency;
+
+} hm2_dpll_t ;
+
+
 // 
 // watchdog
 // 
@@ -899,8 +953,8 @@ typedef struct {
 
     struct {
         int num_encoders;
-        int num_absencs; // This needs to go soon
-        char ssi_formats[MAX_ABSENCS][MAX_ABSENC_LEN];
+        int num_absencs;
+        struct list_head absenc_formats;
         int num_resolvers;
         int num_pwmgens;
         int num_tp_pwmgens;
@@ -909,6 +963,7 @@ typedef struct {
         int num_sserials;
         int num_bspis;
         int num_uarts;
+        int num_dplls;
         char sserial_modes[4][8];
         int enable_raw;
         char *firmware;
@@ -948,6 +1003,7 @@ typedef struct {
     hm2_uart_t uart;
     hm2_ioport_t ioport;
     hm2_watchdog_t watchdog;
+    hm2_dpll_t dpll;
     hm2_led_t led;
 
     hm2_raw_t *raw;
@@ -1060,7 +1116,8 @@ void hm2_encoder_force_write(hostmot2_t *hm2);
 //
 
 
-int hm2_absenc_parse_md(hostmot2_t *hm2, int md_index, char all_formats[][MAX_ABSENC_LEN]);
+int hm2_absenc_parse_md(hostmot2_t *hm2, int md_index);
+int hm2_absenc_register_tram(hostmot2_t *hm2);
 void hm2_absenc_process_tram_read(hostmot2_t *hm2, long period);
 void hm2_absenc_cleanup(hostmot2_t *hm2);
 void hm2_absenc_print_module(hostmot2_t *hm2);
@@ -1170,6 +1227,16 @@ void hm2_uart_process_tram_read(hostmot2_t *hm2, long period);
 int hm2_uart_setup(char *name, int bitrate, s32 tx_mode, s32 rx_mode);
 int hm2_uart_send(char *name, unsigned char data[], int count);
 int hm2_uart_read(char *name, unsigned char data[]);
+
+//
+// hm2dpll functions
+//
+
+void hm2_dpl_cleanup(hostmot2_t *hm2);
+int hm2_dpll_force_write(hostmot2_t *hm2);
+int hm2_dpll_parse_md(hostmot2_t *hm2, int md_index);
+void hm2_dpll_process_tram_read(hostmot2_t *hm2, long period);
+void hm2_dpll_write(hostmot2_t *hm2, long period);
 
 // 
 // watchdog functions

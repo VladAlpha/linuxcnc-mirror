@@ -82,9 +82,6 @@ endif
 endif
 
 
-# list of supported hostmot2 boards
-HM2_BOARDS = 3x20 4i65 4i68 5i20 5i22 5i23 7i43
-
 # Print 'entering' all the time
 MAKEFLAGS += w
 
@@ -185,11 +182,11 @@ ifeq ($(BUILD_PYTHON),yes)
 INCLUDE += -I$(INCLUDEPY)
 endif
 
-# Compilation options.	Perhaps some of these should come from Makefile.inc?
+# Compilation options.	Perhaps some of these should come from Makefile.inc? (CXXFLAGS now does)
 OPT := -Os
 DEBUG := -g -Wall
-CFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(call cc-option, -Wdeclaration-after-statement) $(BITOPS_DEFINE)
-CXXFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(BITOPS_DEFINE)
+CFLAGS := $(INCLUDE) $(OPT) $(DEBUG) -DULAPI $(call cc-option,-std=gnu99 -fgnu89-inline)
+CXXFLAGS := $(INCLUDE) $(CXXFLAGS)   -DULAPI $(DEBUG) $(OPT)
 
 ifeq ($(RUN_IN_PLACE),yes)
 LDFLAGS := -L$(LIB_DIR) -Wl,-rpath,$(LIB_DIR)
@@ -300,6 +297,7 @@ HEADERS := \
     emc/nml_intf/motion_types.h \
     emc/nml_intf/debugflags.h \
     emc/rs274ngc/interp_internal.hh \
+    emc/rs274ngc/interp_base.hh \
     emc/rs274ngc/rs274ngc.hh \
     hal/hal.h \
     hal/hal_parport.h \
@@ -509,6 +507,7 @@ install-dirs:
 		$(DESTDIR)$(datadir)/axis/images \
 		$(DESTDIR)$(datadir)/axis/tcl \
 		$(DESTDIR)$(datadir)/gscreen/images \
+		$(DESTDIR)$(datadir)/gscreen/skins \
 		$(DESTDIR)$(datadir)/glade3/catalogs \
 		$(DESTDIR)$(datadir)/glade3/pixmaps \
 		$(DESTDIR)$(datadir)/gtksourceview-2.0/language-specs \
@@ -596,6 +595,7 @@ install-python: install-dirs
 	$(FILE) ../share/axis/images/*.gif ../share/axis/images/*.xbm ../share/axis/images/*.ngc $(DESTDIR)$(datadir)/axis/images
 	$(FILE) ../share/axis/tcl/*.tcl $(DESTDIR)$(datadir)/axis/tcl
 	$(FILE) ../share/gscreen/images/*.gif $(DESTDIR)$(datadir)/gscreen/images
+	$(TREE) ../share/gscreen/skins/* $(DESTDIR)$(datadir)/gscreen/skins
 endif
 
 install-kernel-dep:
@@ -657,7 +657,7 @@ EXTRA_CFLAGS = $(filter-out -ffast-math,$(RTFLAGS)) -D__MODULE__ -I$(BASEPWD) -I
 	-I$(BASEPWD)/emc/nml_intf -I$(BASEPWD)/emc/kinematics -I$(BASEPWD)/emc/motion \
 	-DSEQUENTIAL_SUPPORT -DHAL_SUPPORT -DDYNAMIC_PLCSIZE -DRT_SUPPORT -DOLD_TIMERS_MONOS_SUPPORT -DMODBUS_IO_MASTER \
 	-fno-fast-math $(call cc-option,-mieee-fp) -fno-unsafe-math-optimizations \
-	$(call cc-option,-Wframe-larger-than=2560)
+	$(call cc-option,-Wframe-larger-than=2560) $(call cc-option,-Wno-declaration-after-statement)
 ifneq ($(KERNELRELEASE),)
 ifeq ($(RTARCH):$(RTAI):$(filter $(RTFLAGS),-msse),x86_64:3:)
 EXTRA_CFLAGS += -msse
@@ -777,6 +777,7 @@ hostmot2-objs :=			  \
 	hal/drivers/mesa-hostmot2/uart.o	  \
     hal/drivers/mesa-hostmot2/watchdog.o  \
     hal/drivers/mesa-hostmot2/pins.o	  \
+    hal/drivers/mesa-hostmot2/dpll.o  \
     hal/drivers/mesa-hostmot2/led.o	  \
     hal/drivers/mesa-hostmot2/tram.o	  \
     hal/drivers/mesa-hostmot2/raw.o	  \
